@@ -1,71 +1,33 @@
 import discord
 from discord import app_commands
 from discord.ext import commands
+from bot.notifications import build_mention
+from bot.models import AnnouncementChannelConfig
+from bot.storage import get_guild_lock, load_guild_config, load_youtube_cache, save_guild_config, save_youtube_channel_info
+from bot.youtube import YouTubeLookupError, resolve_youtube_channel
 
-from bot.models import (
-    AnnouncementChannelConfig,
-)
-from bot.storage import (
-    get_guild_lock,
-    load_guild_config,
-    load_youtube_cache,
-    save_guild_config,
-    save_youtube_channel_info,
-)
-from bot.youtube import (
-    YouTubeLookupError,
-    resolve_youtube_channel,
-)
-
-
-async def require_server_owner(
-    interaction: discord.Interaction,
-) -> bool:
+async def require_server_owner(interaction: discord.Interaction,) -> bool:
     """
     Make sure the command is being used inside
     a Discord server and by that server's owner.
     """
-
     guild = interaction.guild
-
     if guild is None:
-        await interaction.response.send_message(
-            "This command can only be used "
-            "inside a Discord server.",
-            ephemeral=True,
-        )
-
+        await interaction.response.send_message("This command can only be used inside a Discord server.", ephemeral=True)
         return False
-
     if interaction.user.id != guild.owner_id:
-        await interaction.response.send_message(
-            "Only the server owner can change "
-            "YouTube notification settings.",
-            ephemeral=True,
-        )
-
+        await interaction.response.send_message("Only the server owner can change YouTube notification settings.", ephemeral=True)
         return False
-
     return True
-
 
 class GeneralCommands(commands.Cog):
     """
     Commands not belonging to a command group.
     """
-
-    def __init__(
-        self,
-        bot: commands.Bot,
-    ):
+    def __init__(self, bot: commands.Bot,):
         self.bot = bot
 
-    @app_commands.command(
-        name="ping",
-        description=(
-            "Check whether the bot is online."
-        ),
-    )
+    @app_commands.command(name="ping", description=("Check whether the bot is online."),)
     async def ping(
         self,
         interaction: discord.Interaction,
@@ -459,6 +421,261 @@ class YouTubeCommands(
 
         await interaction.response.send_message(
             message,
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="mention",
+        description=(
+            "Choose who gets pinged for YouTube "
+            "notifications in this Discord channel."
+        ),
+    )
+    @app_commands.describe(
+        mode="Who should be pinged?",
+        role=(
+            "Role to ping when Mode is set to Role"
+        ),
+    )
+    @app_commands.choices(
+        mode=[
+            app_commands.Choice(
+                name="No ping",
+                value="none",
+            ),
+            app_commands.Choice(
+                name="@everyone",
+                value="everyone",
+            ),
+            app_commands.Choice(
+                name="Specific role",
+                value="role",
+            ),
+        ]
+    )
+    async def mention(
+        self,
+        interaction: discord.Interaction,
+        mode: app_commands.Choice[str],
+        role: discord.Role | None = None,
+    ):
+        if not await require_server_owner(
+            interaction
+        ):
+            return
+
+        guild = interaction.guild
+
+        if guild is None:
+            return
+
+        discord_channel_id = str(
+            interaction.channel_id
+        )
+
+        if (
+            mode.value == "role"
+            and role is None
+        ):
+            await interaction.response.send_message(
+                (
+                    "You selected **Specific role**, "
+                    "so you also need to choose a role."
+                ),
+                ephemeral=True,
+            )
+
+            return
+
+        async with get_guild_lock(
+            guild.id
+        ):
+            config = await load_guild_config(
+                guild.id
+            )
+
+            announcement_config = (
+                config.announcement_channels.get(
+                    discord_channel_id
+                )
+            )
+
+            if announcement_config is None:
+                await interaction.response.send_message(
+                    (
+                        "This Discord channel is not "
+                        "configured for YouTube "
+                        "notifications yet.\n\n"
+                        "Use `/youtube add` here first."
+                    ),
+                    ephemeral=True,
+                )
+
+                return
+
+            if mode.value == "none":
+                announcement_config.mention.type = (
+                    "none"
+                )
+
+                announcement_config.mention.role_id = (
+                    None
+                )
+
+                response_text = (
+                    "YouTube notifications in this "
+                    "channel will not ping anyone."
+                )
+
+            elif mode.value == "everyone":
+                announcement_config.mention.type = (
+                    "everyone"
+                )
+
+                announcement_config.mention.role_id = (
+                    None
+                )
+
+                response_text = (
+                    "YouTube notifications in this "
+                    "channel will ping **@everyone**."
+                )
+
+            else:
+                # mode == role
+
+                announcement_config.mention.type = (
+                    "role"
+                )
+
+                announcement_config.mention.role_id = (
+                    str(role.id)
+                )
+
+                response_text = (
+                    "YouTube notifications in this "
+                    f"channel will ping {role.mention}."
+                )
+
+            await save_guild_config(
+                config
+            )
+
+        await interaction.response.send_message(
+            response_text,
+            ephemeral=True,
+            allowed_mentions=(
+                discord.AllowedMentions.none()
+            ),
+        )
+
+    @app_commands.command(
+        name="test",
+        description=(
+            "Send a test YouTube notification "
+            "in this Discord channel."
+        ),
+    )
+    async def test_notification(
+        self,
+        interaction: discord.Interaction,
+    ):
+        if not await require_server_owner(
+            interaction
+        ):
+            return
+
+        guild = interaction.guild
+
+        if guild is None:
+            return
+
+        discord_channel = (
+            interaction.channel
+        )
+
+        if discord_channel is None:
+            await interaction.response.send_message(
+                "I could not access this channel.",
+                ephemeral=True,
+            )
+
+            return
+
+        discord_channel_id = str(
+            interaction.channel_id
+        )
+
+        config = await load_guild_config(
+            guild.id
+        )
+
+        announcement_config = (
+            config.announcement_channels.get(
+                discord_channel_id
+            )
+        )
+
+        if announcement_config is None:
+            await interaction.response.send_message(
+                (
+                    "This channel is not configured "
+                    "for YouTube notifications yet.\n\n"
+                    "Use `/youtube add` first."
+                ),
+                ephemeral=True,
+            )
+
+            return
+
+        mention_text, allowed_mentions = (
+            build_mention(
+                announcement_config.mention
+            )
+        )
+
+        await interaction.response.defer(
+            ephemeral=True
+        )
+
+        test_message = (
+            f"{mention_text}"
+            "**Example YouTuber uploaded a new video!**\n"
+            "**This is a test notification.**\n"
+            "https://www.youtube.com/"
+        )
+
+        try:
+            await discord_channel.send(
+                test_message,
+                allowed_mentions=allowed_mentions,
+            )
+
+        except discord.Forbidden:
+            await interaction.followup.send(
+                (
+                    "I couldn't send the test message. "
+                    "Check my Discord permissions in "
+                    "this channel."
+                ),
+                ephemeral=True,
+            )
+
+            return
+
+        except discord.HTTPException as error:
+            await interaction.followup.send(
+                (
+                    "Discord rejected the test "
+                    f"notification: `{error}`"
+                ),
+                ephemeral=True,
+            )
+
+            return
+
+        await interaction.followup.send(
+            "Test notification sent.",
             ephemeral=True,
         )
 
