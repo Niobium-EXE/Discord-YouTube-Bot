@@ -73,6 +73,13 @@ def get_s3_client():
 def get_guild_storage_key(guild_id: int | str) -> str:
     return f"guilds/{guild_id}.json"
 
+def get_guild_state_storage_key(guild_id: int | str) -> str:
+    """
+    Return the bucket/local-storage key for
+    notification runtime state.
+    """
+    return f"state/{guild_id}.json"
+
 def create_default_guild_config(guild_id: int | str) -> GuildConfig:
     return GuildConfig(guild_id=str(guild_id))
 
