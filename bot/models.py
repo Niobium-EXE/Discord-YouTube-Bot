@@ -84,3 +84,24 @@ class YouTubeChannelCache(BaseModel):
     ] = Field(
         default_factory=dict
     )
+
+class GuildState(BaseModel):
+    """
+    Runtime state for one Discord server.
+
+    This is separate from the guild's configuration.
+    """
+
+    guild_id: str
+
+    # Key:
+    # Discord announcement channel ID
+    #
+    # Value:
+    # Recently sent YouTube video IDs
+    sent_notifications: dict[
+        str,
+        list[str]
+    ] = Field(
+        default_factory=dict
+    )

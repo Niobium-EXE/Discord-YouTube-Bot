@@ -9,6 +9,7 @@ class YouTubeBot(commands.Bot):
 
     async def setup_hook(self):
         await self.load_extension("bot.commands")
+        await self.load_extension("bot.watcher")
         await self.tree.sync()
         print("Discord slash commands synced.")
 
