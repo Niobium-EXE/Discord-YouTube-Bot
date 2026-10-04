@@ -8,41 +8,27 @@ class YouTubeBot(commands.Bot):
         super().__init__(command_prefix=commands.when_mentioned, intents=intents)
 
     async def setup_hook(self):
-        # -------------------------------------------------
-        # Load all of our bot modules first.
-        # -------------------------------------------------
         await self.load_extension("bot.commands")
         await self.load_extension("bot.watcher")
-        # -------------------------------------------------
-        # FORCE REFRESH GLOBAL SLASH COMMANDS
-        # -------------------------------------------------
+
         print("[Commands] Loaded commands from Python:")
         for command in self.tree.walk_commands():
             print(f"[Commands] /{command.qualified_name}")
-        # Save the CURRENT commands before clearing them. These are the commands that were just loaded from bot.commands.
-        current_commands = list(self.tree.get_commands())
-        print("[Commands] Clearing old global commands from discord...")
-        # Remove everything from the local global tree.
+
+        commands_to_sync = list(self.tree.get_commands())
+
+        print("[Commands] Clearing old commands...")
         self.tree.clear_commands(guild=None)
-        # Sync the now-empty tree. This tells Discord: "This application currently has zero global commands."
         await self.tree.sync()
-        print("[Commands] Old global commands cleared.")
-        # -------------------------------------------------
-        # Put our current commands back into the tree.
-        # -------------------------------------------------
-        print("[Commands] Restoring current commands...")
-        for command in current_commands:
+
+        for command in commands_to_sync:
             self.tree.add_command(command, override=True)
-        # -------------------------------------------------
-        # Sync the CURRENT command list to Discord.
-        # -------------------------------------------------
-        synced_commands = await self.tree.sync()
-        print("[Commands] Current global commands synced.")
-        print(f"[Commands] Discord now has {len(synced_commands)} root command(s).")
-        print("[Commands Final command tree:")
+
+        synced = await self.tree.sync()
+
+        print(f"[Commands] Synced {len(synced)} root commands.")
         for command in self.tree.walk_commands():
             print(f"[Commands] /{command.qualified_name}")
-            print("[Commands] Slash command refresh complete.")
 
     async def on_ready(self):
         if self.user is None:
